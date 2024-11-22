@@ -31,11 +31,13 @@ scipy==1.14.1
 six==1.16.0
 safetensors==0.4.5
 tensorflow==2.13.0
+tensorboard<2.14,>=2.13
+tensorflow-estimator<2.14,>=2.13.0
 termcolor==2.5.0
 torch==2.5.1
 torchvision==0.20.1
 tqdm==4.67.0
 transformers==4.46.3
-typing_extensions==4.11.0
+typing-extensions<4.6.0
 uvicorn==0.32.0
 Werkzeug==3.0.3
