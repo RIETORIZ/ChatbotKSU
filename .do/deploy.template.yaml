@@ -8,6 +8,6 @@ services:
 
 static_sites:
   - name: frontend
-    source_dir: ./chatbot-project/build
+    source_dir: ./chatbot-project
     build_command: npm install && npm run build
     output_dir: build
