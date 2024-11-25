@@ -1,27 +1,56 @@
+import os
 from flask import Flask, request, jsonify
 from transformers import BertTokenizer, BertForSequenceClassification, pipeline
 import random
 import json
 from flask_cors import CORS
+from pathlib import Path
+import logging
+
+# Configure Logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
 # Enable CORS for frontend-backend communication
 CORS(app)
 
-# Paths for model and intents
-model_path = "C:/ChatBotProject/backend/chatbotBE/chatbotMODEL"
-intents_path = "C:/ChatBotProject/backend/chatbotBE/intents.json"
+# Dynamically resolve paths for model and intents using pathlib
+BASE_DIR = Path(__file__).resolve().parent
+model_path = (BASE_DIR / "chatbotMODEL").resolve().as_posix()
+intents_path = (BASE_DIR / "intents.json").resolve().as_posix()
+
+# Debug: Log paths
+logger.info(f"Model Path: {model_path}")
+logger.info(f"Intents Path: {intents_path}")
 
 # Load model and tokenizer
-tokenizer = BertTokenizer.from_pretrained(model_path)
-model = BertForSequenceClassification.from_pretrained(model_path)
-chatbot = pipeline("sentiment-analysis", model=model, tokenizer=tokenizer)
+try:
+    logger.info("Loading tokenizer...")
+    tokenizer = BertTokenizer.from_pretrained(model_path)
+    logger.info("Tokenizer loaded.")
+    
+    logger.info("Loading model...")
+    model = BertForSequenceClassification.from_pretrained(model_path)
+    logger.info("Model loaded.")
+    
+    logger.info("Initializing chatbot pipeline...")
+    chatbot = pipeline("text-classification", model=model, tokenizer=tokenizer)
+    logger.info("Chatbot pipeline initialized successfully.")
+except Exception as e:
+    logger.error(f"Error loading model/tokenizer: {e}")
+    raise e
 
 # Load intents
-with open(intents_path, "r") as file:
-    intents = json.load(file)
-
+try:
+    logger.info("Loading intents...")
+    with open(intents_path, "r") as file:
+        intents = json.load(file)
+    logger.info("Intents loaded successfully.")
+except Exception as e:
+    logger.error(f"Error loading intents: {e}")
+    raise e
 
 def get_recommended_questions():
     """
@@ -49,42 +78,61 @@ def get_recommended_questions():
 
     return recommended_questions
 
-
 @app.route("/chat", methods=["POST"])
 def chat():
     """
     Chatbot endpoint to handle user messages and return a response.
     """
-    # Get user input from the frontend
-    data = request.json
-    user_input = data.get("message", "")
+    try:
+        # Get user input from the frontend
+        data = request.json
+        user_input = data.get("message", "").strip()
 
-    # Generate intent and score
-    prediction = chatbot(user_input)[0]
-    intent_label = prediction["label"]
-    confidence = prediction["score"]
+        if not user_input:
+            logger.warning("No message provided by the user.")
+            return jsonify({"response": "No message provided.", "confidence": 0.0}), 400
 
-    if confidence < 0.8:
-        return jsonify({"response": "Sorry, I can't answer that right now.", "confidence": confidence})
+        # Generate intent and score
+        prediction = chatbot(user_input)[0]
+        intent_label = prediction["label"]
+        confidence = prediction["score"]
 
-    # Find the appropriate response for the intent
-    for intent in intents["intents"]:
-        if intent["tag"] == intent_label:
-            response = random.choice(intent["responses"])
-            return jsonify({"response": response, "confidence": confidence})
+        logger.info(f"User Input: {user_input}")
+        logger.info(f"Prediction: {prediction}")
 
-    # Fallback if intent not found
-    return jsonify({"response": "Sorry, something went wrong.", "confidence": confidence})
+        if confidence < 0.8:
+            logger.info(f"Low confidence ({confidence}) for intent '{intent_label}'.")
+            return jsonify({"response": "Sorry, I can't answer that right now.", "confidence": confidence})
 
+        # Find the appropriate response for the intent
+        for intent in intents["intents"]:
+            if intent["tag"] == intent_label:
+                response = random.choice(intent["responses"])
+                logger.info(f"Responding with: {response}")
+                return jsonify({"response": response, "confidence": confidence})
+
+        # Fallback if intent not found
+        logger.error(f"Intent '{intent_label}' not found in intents.")
+        return jsonify({"response": "Sorry, something went wrong.", "confidence": confidence})
+
+    except Exception as e:
+        logger.error(f"Error in /chat endpoint: {e}")
+        return jsonify({"response": "Internal server error.", "confidence": 0.0}), 500
 
 @app.route("/recommended", methods=["GET"])
 def recommended():
     """
     Endpoint to get 5 recommended questions for the user.
     """
-    questions = get_recommended_questions()
-    return jsonify({"recommended_questions": questions})
-
+    try:
+        questions = get_recommended_questions()
+        logger.info(f"Recommended Questions: {questions}")
+        return jsonify({"recommended_questions": questions})
+    except Exception as e:
+        logger.error(f"Error in /recommended endpoint: {e}")
+        return jsonify({"recommended_questions": [], "error": "Could not retrieve recommended questions."}), 500
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    port = int(os.environ.get("PORT", 5000))
+    logger.info(f"Starting server on port {port}")
+    app.run(host="0.0.0.0", port=port)
